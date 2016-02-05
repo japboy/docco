@@ -58,7 +58,7 @@
   };
 
   parse = function(source, code, config) {
-    var codeText, docsText, hasCode, i, isText, j, k, lang, len, len1, line, lines, match, maybeCode, save, sections;
+    var codeText, comment, docsText, hasCode, i, isText, lang, line, lines, match, maybeCode, multiline, save, sections, stripWhitespace, _i, _j, _len, _len1;
     if (config == null) {
       config = {};
     }
@@ -67,11 +67,14 @@
     lang = getLanguage(source, config);
     hasCode = docsText = codeText = '';
     save = function() {
+      var multiline, stripWhitespace;
       sections.push({
         docsText: docsText,
         codeText: codeText
       });
-      return hasCode = docsText = codeText = '';
+      hasCode = docsText = codeText = '';
+      multiline = false;
+      return stripWhitespace = 0;
     };
     if (lang.literate) {
       isText = maybeCode = true;
@@ -80,13 +83,30 @@
         lines[i] = maybeCode && (match = /^([ ]{4}|[ ]{0,3}\t)/.exec(line)) ? (isText = false, line.slice(match[0].length)) : (maybeCode = /^\s*$/.test(line)) ? isText ? lang.symbol : '' : (isText = true, lang.symbol + ' ' + line);
       }
     }
-    for (k = 0, len1 = lines.length; k < len1; k++) {
-      line = lines[k];
-      if (line.match(lang.commentMatcher) && !line.match(lang.commentFilter)) {
+    for (_j = 0, _len1 = lines.length; _j < _len1; _j++) {
+      line = lines[_j];
+      if (multiline) {
+        comment = line.slice(stripWhitespace);
+      } else if ((match = line.match(lang.commentMatcher)) && !line.match(lang.commentFilter)) {
+        comment = match[1];
+      } else {
+        comment = '';
+      }
+      if (lang.commentEnter && !multiline && (match = line.match(lang.commentEnter))) {
+        line = comment = match[2];
+        stripWhitespace = match[1].length;
+        multiline = true;
+      }
+      if (lang.commentExit && multiline && (match = line.match(lang.commentExit))) {
+        line = comment = match[1];
+        stripWhitespace = 0;
+        multiline = false;
+      }
+      if (comment) {
         if (hasCode) {
           save();
         }
-        docsText += (line = line.replace(lang.commentMatcher, '')) + '\n';
+        docsText += comment + '\n';
         if (/^(---+|===+)$/.test(line)) {
           save();
         }
@@ -217,8 +237,12 @@
     var ext, l;
     for (ext in languages) {
       l = languages[ext];
-      l.commentMatcher = RegExp("^\\s*" + l.symbol + "\\s?");
-      l.commentFilter = /(^#![\/]|^\s*#\{)/;
+      l.commentMatcher = RegExp("^\\s*" + l.symbol + "\\s?(.*)$");
+      if (l.multiline) {
+        l.commentEnter = RegExp("^(\\s*)" + l.multiline + "\\s?(.*)$");
+        l.commentExit = RegExp("^(.*)\\s?" + l.multiline + "\\s*$");
+      }
+      l.commentFilter = /(^#![/]|^\s*#\{)/;
     }
     return languages;
   };
@@ -226,9 +250,9 @@
   languages = buildMatchers(languages);
 
   getLanguage = function(source, config) {
-    var codeExt, codeLang, ext, lang, ref;
+    var codeExt, codeLang, ext, lang, _ref;
     ext = config.extension || path.extname(source) || path.basename(source);
-    lang = ((ref = config.languages) != null ? ref[ext] : void 0) || languages[ext];
+    lang = ((_ref = config.languages) != null ? _ref[ext] : void 0) || languages[ext];
     if (lang && lang.name === 'markdown') {
       codeExt = path.extname(path.basename(source, ext));
       if (codeExt && (codeLang = languages[codeExt])) {
